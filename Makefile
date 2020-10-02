@@ -42,8 +42,9 @@ ingress:
 provision:												## Provision CIVO Cluster
 	$(info Provisioning cluster..)
 	@civo kubernetes create \
-		--nodes 2 \
-		--save --switch --wait \
+		--nodes 3 \
+		--size "g2.medium" \
+		--wait \
 		$(CLUSTER_NAME) 
 
 ##########################################################
@@ -57,7 +58,7 @@ deploy-core: prometheus-operator prometheus pushgateway grafana openfaas cron-co
 prometheus-operator:									## Deploy Prometheus Operator
 	@$(info Deploying Prometheus Operator)
 	@$(KUBECTL) create namespace monitoring --dry-run -o yaml | $(KUBECTL) apply -f -
-	@$(KUBECTL) apply --wait -n default -f https://raw.githubusercontent.com/coreos/prometheus-operator/v0.34.0/bundle.yaml --all
+	@$(KUBECTL) apply --wait -n default -f https://raw.githubusercontent.com/coreos/prometheus-operator/v0.42.1/bundle.yaml --all
 	@sleep 5
 	@$(KUBECTL) wait -n default --for condition=established crds --all --timeout=60s
 
@@ -71,7 +72,7 @@ pushgateway:											## Deploy Push Gateway
 	$(HELM) upgrade --install \
 		--namespace $(NAMESPACE) \
 		--values deploy/pushgateway/values.yaml \
-		--version 1.2.5 \
+		--version 1.3.0 \
 		--wait \
 		metrics-sink stable/prometheus-pushgateway
 	 
