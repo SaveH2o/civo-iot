@@ -1,6 +1,6 @@
 include .env
 
-CLUSTER_NAME = civo-iot
+CLUSTER_NAME = saveh2o
 CLUSTER_ID = $(shell curl -H "Authorization: Bearer ${CIVO_TOKEN}" https://api.civo.com/v2/kubernetes/clusters | jq '.items[] | select(.name == "$(CLUSTER_NAME)") | .id')
 NAMESPACE = default
 #KUBECONFIG := --kubeconfig $$HOME/.kube/config
