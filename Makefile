@@ -8,7 +8,7 @@ KUBECTL := kubectl $(KUBECONFIG)
 HELM := helm $(KUBECONFIG)
 
 ifeq ($(INGRESS),)
-INGRESS = ${CLUSTER_ID}.k8s.civo.com
+INGRESS = $(CLUSTER_ID).k8s.civo.com
 endif
 
 FAAS_BUILD_ARGS = --tag=branch
@@ -75,7 +75,7 @@ pushgateway:											## Deploy Push Gateway
 		--version 1.3.0 \
 		--wait \
 		metrics-sink stable/prometheus-pushgateway
-	 
+	
 grafana:												## Deploy Grafana
 	$(info Deploying Grafana)
 	@docker run -it \
@@ -86,8 +86,8 @@ grafana:												## Deploy Grafana
 	@$(HELM) upgrade --install \
 		--namespace monitoring \
 		--set adminPassword=$(ADMIN_PASSWORD) \
-  		--set ingress.hosts[0]="grafana.$(INGRESS)" \
-  		--set ingress.path="/" \
+		--set ingress.hosts[0]="grafana.$(INGRESS)" \
+		--set ingress.path="/" \
 		--values /tmp/grafana.yaml \
 		--version 4.0.4 \
 		--wait \
