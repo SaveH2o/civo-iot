@@ -1,14 +1,14 @@
 include .env
 
 CLUSTER_NAME = saveh2o
-CLUSTER_ID = $(shell curl -H "Authorization: Bearer ${CIVO_TOKEN}" https://api.civo.com/v2/kubernetes/clusters | jq '.items[] | select(.name == "$(CLUSTER_NAME)") | .id')
-NAMESPACE = default
-#KUBECONFIG := --kubeconfig $$HOME/.kube/config
+CLUSTER_ID = $(curl -H "Authorization: Bearer ${CIVO_TOKEN}" https://api.civo.com/v2/kubernetes/clusters | jq '.items[] | select(.name == "saveh2o") | .id')
+
+KUBECONFIG := --kubeconfig $$HOME/.kube/config
 KUBECTL := kubectl $(KUBECONFIG)
 HELM := helm $(KUBECONFIG)
 
 ifeq ($(INGRESS),)
-INGRESS = $(CLUSTER_ID).k8s.civo.com
+INGRESS = ${CLUSTER_ID}.k8s.civo.com
 endif
 
 FAAS_BUILD_ARGS = --tag=branch
@@ -64,13 +64,13 @@ prometheus-operator:									## Deploy Prometheus Operator
 
 prometheus:												## Deploy Prometheus
 	$(info Deploying Prometheus)
-	$(KUBECTL) kustomize deploy/prometheus | $(KUBECTL) apply -n $(NAMESPACE) -f -
+	$(KUBECTL) kustomize deploy/prometheus | $(KUBECTL) apply -n monitoring -f -
 
 pushgateway:											## Deploy Push Gateway
 	$(info Deploying Push Gateway)
 	$(HELM) repo update
 	$(HELM) upgrade --install \
-		--namespace $(NAMESPACE) \
+		--namespace monitoring \
 		--values deploy/pushgateway/values.yaml \
 		--version 1.3.0 \
 		--wait \
@@ -84,7 +84,7 @@ grafana:												## Deploy Grafana
 		--workdir /home \
 		jwilder/dockerize -template deploy/grafana/values.yaml > /tmp/grafana.yaml
 	@$(HELM) upgrade --install \
-		--namespace $(NAMESPACE) \
+		--namespace monitoring \
 		--set adminPassword=$(ADMIN_PASSWORD) \
   		--set ingress.hosts[0]="grafana.$(INGRESS)" \
   		--set ingress.path="/" \
@@ -92,7 +92,7 @@ grafana:												## Deploy Grafana
 		--version 4.0.4 \
 		--wait \
 		grafana stable/grafana
-	@$(KUBECTL) apply -f deploy/grafana/fleet-dashboard.yaml -n $(NAMESPACE)
+	@$(KUBECTL) apply -f deploy/grafana/fleet-dashboard.yaml -n monitoring
 
 openfaas:												## Deploy OpenFaaS
 	@$(KUBECTL) apply -f https://raw.githubusercontent.com/openfaas/faas-netes/master/namespaces.yml
@@ -120,7 +120,7 @@ cron-connector:											## Deploy Cron Connector
 mock-server:											## Deploy Mock Server
 	$(info Deploying Mock Server)
 	$(KUBECTL) kustomize \
-		https://github.com/gabeduke/wio-mock/deploy?ref=master | $(KUBECTL) apply -n $(NAMESPACE) -f -
+		https://github.com/gabeduke/wio-mock/deploy?ref=master | $(KUBECTL) apply -n default -f -
 
 ##########################################################
 ##@ Faas
@@ -158,20 +158,23 @@ faas-login:												## Log in to OpenFaaS
 .PHONY: proxies kill-proxies help clean
 
 proxies:												## Proxy all services
-	@$(KUBECTL) port-forward svc/grafana -n $(NAMESPACE) 8080:80 &
-	@echo http://localhost:8080
-
-	@$(KUBECTL) port-forward svc/prometheus-operated -n $(NAMESPACE) 9090:9090 &
+	@$(KUBECTL) proxy &
+	@echo http://localhost:8001
+	
+	@$(KUBECTL) port-forward -n monitoring prometheus-prometheus-operator-prometheus-0 9090:9090 &
 	@echo http://localhost:9090
 
-	@$(KUBECTL) port-forward svc/metrics-sink-prometheus-pushgateway -n $(NAMESPACE) 9091:9091 &
-	@echo http://localhost:9091
+	# @$(KUBECTL) port-forward svc/grafana -n monitoring 8080:80 &
+	# @echo http://localhost:8080
 
-	@$(KUBECTL) port-forward svc/wio-mock -n $(NAMESPACE) 8081:8080 &
-	@echo http://localhost:8081
+	# @$(KUBECTL) port-forward svc/metrics-sink-prometheus-pushgateway -n monitoring 9091:9091 &
+	# @echo http://localhost:9091
 
-	@$(KUBECTL) port-forward svc/gateway -n openfaas 8082:8080 &
-	@echo http://localhost:8082
+	# @$(KUBECTL) port-forward svc/wio-mock -n monitoring 8081:8080 &
+	# @echo http://localhost:8081
+
+	# @$(KUBECTL) port-forward svc/gateway -n openfaas 8082:8080 &
+	# @echo http://localhost:8082
 
 kill-proxies:											## Kill proxies (kills all kubectl proceses)
 	pkill kubectl || true
