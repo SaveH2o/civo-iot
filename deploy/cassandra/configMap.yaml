@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: env-config
+data:
+  BASE_ADDRESS: 'http://localhost:9999/api'
+  LOCAL_DATACENTER: 'dc1'
+  USE_ASTRA: 'false'
+  CONNECTION_POINTS: 'cluster1-dc1-service.cass-operator.svc.cluster.local'
+  KEYSPACE: 'killrvideo'
+  USERNAME: 'cluster1-superuser'
+  PASSWORD: '69s1GUjxYpkElE98kCwzAeoS8qlE-Ddd38mNqzJp3UHlLn-wEImUlw'

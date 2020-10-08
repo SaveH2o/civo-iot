@@ -1,7 +1,7 @@
 include .env
 
 CLUSTER_NAME = saveh2o
-CLUSTER_ID = $(curl -H "Authorization: Bearer ${CIVO_TOKEN}" https://api.civo.com/v2/kubernetes/clusters | jq '.items[] | select(.name == "saveh2o") | .id')
+CLUSTER_ID = $(shell curl -H "Authorization: Bearer ${CIVO_TOKEN}" https://api.civo.com/v2/kubernetes/clusters | jq '.items[] | select(.name == "saveh2o") | .id')
 
 KUBECONFIG := --kubeconfig $$HOME/.kube/config
 KUBECTL := kubectl $(KUBECONFIG)
@@ -48,6 +48,27 @@ provision:												## Provision CIVO Cluster
 		$(CLUSTER_NAME) 
 
 ##########################################################
+##@ DATABASE
+##########################################################
+.PHONY: deploy-db cassandra-operator config-map
+
+deploy-db: cassandra-operator config-map
+
+cassandra-operator:									## Deploy Cassandra Operator
+	$(info Deploying Cassandra Operator)
+	$(KUBECTL) create namespace cass-operator
+	$(KUBECTL) -n cass-operator apply -f deploy/cassandra/02-storageclass-kind.yaml
+	$(KUBECTL) -n cass-operator apply -f deploy/cassandra/03-install-cass-operator-v1.3.yaml
+	sleep 5
+	$(KUBECTL) -n cass-operator apply -f deploy/cassandra/04-cassandra-cluster-1nodes.yaml
+
+config-map:
+	@cat deploy/cassandra/05-configMap.yaml | \
+		sed "s/superuserpassword/$(shell \
+		$(KUBECTL) get secret cluster1-superuser -n cass-operator -o yaml | grep -m1 -Po 'password: \K.*' | base64 -d && echo "")/" - \
+		> deploy/cassandra/configMap.yaml
+
+##########################################################
 ##@ CORE APPS
 ##########################################################
 .PHONY: deploy-core prometheus-operator prometheus pushgateway grafana openfaas cron-connector mock-server
@@ -57,7 +78,7 @@ deploy-core: prometheus-operator prometheus pushgateway grafana openfaas cron-co
 
 prometheus-operator:									## Deploy Prometheus Operator
 	@$(info Deploying Prometheus Operator)
-	@$(KUBECTL) create namespace monitoring --dry-run -o yaml | $(KUBECTL) apply -f -
+	@$(KUBECTL) create namespace monitoring --dry-run=client -o yaml | $(KUBECTL) apply -f -
 	@$(KUBECTL) apply --wait -n default -f https://raw.githubusercontent.com/coreos/prometheus-operator/v0.42.1/bundle.yaml --all
 	@sleep 5
 	@$(KUBECTL) wait -n default --for condition=established crds --all --timeout=60s
