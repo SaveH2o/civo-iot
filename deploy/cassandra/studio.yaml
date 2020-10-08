@@ -1,0 +1,45 @@
+# See https://raw.githubusercontent.com/vishnuc95/Scripts-Kubernetes-Yaml-/master/dse-studio-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: studio-lb
+spec:
+  selector:
+    matchLabels:
+      app: studio-lb
+  template:
+    metadata:
+      labels:
+        app: studio-lb
+    spec:
+      containers:
+      - name: studio-lb
+        image: datastax/dse-studio:latest
+        env:
+        - name: DS_LICENSE
+          value: accept
+        ports:
+        - containerPort: 9091
+          name: studio-gui-port
+        - containerPort: 61620
+          name: port-61620
+        envFrom:
+        - configMapRef:
+              name: env-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: studio-lb
+spec:
+  ports:
+  - name: http
+    port: 9091
+    protocol: TCP
+    targetPort: 9091
+    nodePort: 30500
+  #loadBalancerIP: 
+  selector:
+    app: studio-lb
+  type: NodePort
+  #type: LoadBalancer

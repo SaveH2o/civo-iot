@@ -55,18 +55,23 @@ provision:												## Provision CIVO Cluster
 deploy-db: cassandra-operator config-map
 
 cassandra-operator:									## Deploy Cassandra Operator
-	$(info Deploying Cassandra Operator)
-	$(KUBECTL) create namespace cass-operator
-	$(KUBECTL) -n cass-operator apply -f deploy/cassandra/02-storageclass-kind.yaml
-	$(KUBECTL) -n cass-operator apply -f deploy/cassandra/03-install-cass-operator-v1.3.yaml
-	sleep 5
-	$(KUBECTL) -n cass-operator apply -f deploy/cassandra/04-cassandra-cluster-1nodes.yaml
+	@$(info Deploying Cassandra Operator)
+	@$(KUBECTL) create namespace cass-operator
+	@$(KUBECTL) -n cass-operator apply -f deploy/cassandra/02-storageclass-kind.yaml
+	@$(KUBECTL) -n cass-operator apply -f deploy/cassandra/03-install-cass-operator-v1.3.yaml
+	@sleep 5
+	@$(KUBECTL) -n cass-operator apply -f deploy/cassandra/04-cassandra-cluster-1nodes.yaml
 
 config-map:
 	@cat deploy/cassandra/05-configMap.yaml | \
 		sed "s/superuserpassword/$(shell \
 		$(KUBECTL) get secret cluster1-superuser -n cass-operator -o yaml | grep -m1 -Po 'password: \K.*' | base64 -d && echo "")/" - \
 		> deploy/cassandra/configMap.yaml
+
+studio:
+	@$(KUBECTL) create namespace studio
+	@$(KUBECTL) -n studio apply -f deploy/cassandra/configMap.yaml
+	@$(KUBECTL) -n studio apply -f deploy/cassandra/studio.yaml
 
 ##########################################################
 ##@ CORE APPS
@@ -184,6 +189,10 @@ proxies:												## Proxy all services
 	
 	@$(KUBECTL) port-forward -n monitoring prometheus-prometheus-operator-prometheus-0 9090:9090 &
 	@echo http://localhost:9090
+
+	@$(KUBECTL) port-forward -n studio \
+		$(shell $(KUBECTL) get pods --namespace studio -l "app=studio-lb" -o jsonpath="{.items[0].metadata.name}") 9091:9091 &
+	@echo http://localhost:9091
 
 	# @$(KUBECTL) port-forward svc/grafana -n monitoring 8080:80 &
 	# @echo http://localhost:8080
