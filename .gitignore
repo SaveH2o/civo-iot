@@ -4,3 +4,4 @@ build
 secret-*
 vendor
 config
+configMap.yaml

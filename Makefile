@@ -206,7 +206,7 @@ proxies:												## Proxy all services
 	# @$(KUBECTL) port-forward svc/gateway -n openfaas 8082:8080 &
 	# @echo http://localhost:8082
 
-kill-proxies:											## Kill proxies (kills all kubectl proceses)
+kill-proxies:											## Kill proxies (kills all kubectl processes)
 	pkill kubectl || true
 
 help:													## Display this help
