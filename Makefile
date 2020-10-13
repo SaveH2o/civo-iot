@@ -37,7 +37,7 @@ ingress:
 ##########################################################
 ##@ CLUSTER
 ##########################################################
-.PHONY: provision
+.PHONY: provision kube-config
 
 provision:												## Provision CIVO Cluster
 	$(info Provisioning cluster..)
@@ -47,49 +47,52 @@ provision:												## Provision CIVO Cluster
 		--wait \
 		$(CLUSTER_NAME) 
 
+kube-config:											## Download and show KUBECONFIG
+	@civo kubernetes config $(CLUSTER_NAME)
+
 ##########################################################
 ##@ DATABASE
 ##########################################################
-.PHONY: deploy-db cassandra-operator config-map
+.PHONY: deploy-db cassandra-operator config-map studio
 
-deploy-db: cassandra-operator config-map
+deploy-db: cassandra-operator config-map studio		## Deploy Cassandra, ConfigMap and Studio
 
 cassandra-operator:									## Deploy Cassandra Operator
 	@$(info Deploying Cassandra Operator)
-	@$(KUBECTL) create namespace cass-operator
+	@$(KUBECTL) create namespace cass-operator --dry-run=client -o yaml | $(KUBECTL) apply -f -
 	@$(KUBECTL) -n cass-operator apply -f deploy/cassandra/02-storageclass-kind.yaml
 	@$(KUBECTL) -n cass-operator apply -f deploy/cassandra/03-install-cass-operator-v1.3.yaml
 	@sleep 5
 	@$(KUBECTL) -n cass-operator apply -f deploy/cassandra/04-cassandra-cluster-1nodes.yaml
 
-config-map:
+config-map:											## Deploy ConfigMap
 	@cat deploy/cassandra/05-configMap.yaml | \
 		sed "s/superuserpassword/$(shell \
 		$(KUBECTL) get secret cluster1-superuser -n cass-operator -o yaml | grep -m1 -Po 'password: \K.*' | base64 -d && echo "")/" - \
 		> deploy/cassandra/configMap.yaml
 
-studio:
-	@$(KUBECTL) create namespace studio
+studio:												## Deploy Studio
+	@$(KUBECTL) create namespace studio --dry-run=client -o yaml | $(KUBECTL) apply -f -
 	@$(KUBECTL) -n studio apply -f deploy/cassandra/configMap.yaml
 	@$(KUBECTL) -n studio apply -f deploy/cassandra/studio.yaml
 
 ##########################################################
 ##@ CORE APPS
 ##########################################################
-.PHONY: deploy-core prometheus-operator prometheus pushgateway grafana openfaas cron-connector mock-server
+.PHONY: deploy-core prometheus-operator prometheus pushgateway grafana
 
 deploy-core: 											## Deploy all core applications
-deploy-core: prometheus-operator prometheus pushgateway grafana openfaas cron-connector mock-server
+deploy-core: prometheus-operator prometheus pushgateway grafana
 
 prometheus-operator:									## Deploy Prometheus Operator
 	@$(info Deploying Prometheus Operator)
-	@$(KUBECTL) create namespace monitoring --dry-run=client -o yaml | $(KUBECTL) apply -f -
-	@$(KUBECTL) apply --wait -n default -f https://raw.githubusercontent.com/coreos/prometheus-operator/v0.42.1/bundle.yaml --all
-	@sleep 5
-	@$(KUBECTL) wait -n default --for condition=established crds --all --timeout=60s
+	$(KUBECTL) -n default apply -f https://raw.githubusercontent.com/coreos/prometheus-operator/v0.42.1/bundle.yaml --wait --all
+	sleep 5
+	$(KUBECTL) -n default wait --for condition=established crds --all --timeout=60s
 
 prometheus:												## Deploy Prometheus
 	$(info Deploying Prometheus)
+	@$(KUBECTL) create namespace monitoring --dry-run=client -o yaml | $(KUBECTL) apply -f -
 	$(KUBECTL) kustomize deploy/prometheus | $(KUBECTL) apply -n monitoring -f -
 
 pushgateway:											## Deploy Push Gateway
@@ -119,6 +122,70 @@ grafana:												## Deploy Grafana
 		--wait \
 		grafana stable/grafana
 	@$(KUBECTL) apply -f deploy/grafana/fleet-dashboard.yaml -n monitoring
+
+##########################################################
+##@ UTIL
+##########################################################
+.PHONY: proxies kill-proxies kill-prometheus help clean
+
+proxies:												## Proxy all services
+	@$(KUBECTL) proxy &
+	@echo http://localhost:8001
+	
+	@$(KUBECTL) port-forward -n monitoring prometheus-prometheus-0 9090:9090 &
+	@echo http://localhost:9090
+
+	@$(KUBECTL) port-forward -n studio \
+		$(shell $(KUBECTL) get pods --namespace studio -l "app=studio-lb" -o jsonpath="{.items[0].metadata.name}") 9091:9091 &
+	@echo http://localhost:9091
+
+	@$(KUBECTL) port-forward -n monitoring \
+		$(shell $(KUBECTL) get pods --namespace monitoring -l "app=prometheus-pushgateway,release=metrics-sink" -o jsonpath="{.items[0].metadata.name}") 8080:80 &
+	@echo http://localhost:8080
+
+	# @$(KUBECTL) port-forward svc/grafana -n monitoring 8080:80 &
+	# @echo http://localhost:8080
+
+	# @$(KUBECTL) port-forward svc/metrics-sink-prometheus-pushgateway -n monitoring 9091:9091 &
+	# @echo http://localhost:9091
+
+	# @$(KUBECTL) port-forward svc/wio-mock -n monitoring 8081:8080 &
+	# @echo http://localhost:8081
+
+	# @$(KUBECTL) port-forward svc/gateway -n openfaas 8082:8080 &
+	# @echo http://localhost:8082
+
+kill-proxies:											## Kill proxies (kills all kubectl processes)
+	pkill kubectl || true
+
+kill-prometheus:										## Kill prometheus monitoring
+	for ns in $(shell $(KUBECTL) get namespaces -o jsonpath={..metadata.name}); do \
+		$(KUBECTL) delete --all --namespace=$(ns) prometheus,servicemonitoring,podmonitoring,alertmanager ; \
+	done &
+	$(KUBECTL) delete -n monitoring -f https://raw.githubusercontent.com/coreos/prometheus-operator/v0.42.1/bundle.yaml &
+	for ns in $(shell $(KUBECTL) get namespaces -o jsonpath={..metadata.name}); do \
+		$(KUBECTL) delete --ignore-not-found --namespace=$(ns) service prometheus-operated alertmanager-operated ; \
+	done &
+	$(KUBECTL) delete --ignore-not-found customresourcedefinitions \
+		prometheuses.monitoringing.coreos.com \
+		servicemonitorings.monitoringing.coreos.com \
+		podmonitorings.monitoringing.coreos.com \
+		alertmanagers.monitoringing.coreos.com \
+		prometheusrules.monitoringing.coreos.com &
+	$(KUBECTL) delete ns monitoring
+
+help:													## Display this help
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m 	%s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+
+clean: kill-proxies										## Destroy cluster
+	civo k8s delete $(CLUSTER_NAME)
+
+##########################################################
+##@ Faas Core
+##########################################################
+.PHONY: openfaas cron-connector mock-server
+
+openfaas: cron-connector mock-server
 
 openfaas:												## Deploy OpenFaaS
 	@$(KUBECTL) apply -f https://raw.githubusercontent.com/openfaas/faas-netes/master/namespaces.yml
@@ -177,40 +244,3 @@ faas-create-secrets: faas-login								## Create FaaS secrets
 
 faas-login:												## Log in to OpenFaaS
 	faas login --gateway $(FAAS_GATEWAY) -u admin -p $(ADMIN_PASSWORD)
-
-##########################################################
-##@ UTIL
-##########################################################
-.PHONY: proxies kill-proxies help clean
-
-proxies:												## Proxy all services
-	@$(KUBECTL) proxy &
-	@echo http://localhost:8001
-	
-	@$(KUBECTL) port-forward -n monitoring prometheus-prometheus-operator-prometheus-0 9090:9090 &
-	@echo http://localhost:9090
-
-	@$(KUBECTL) port-forward -n studio \
-		$(shell $(KUBECTL) get pods --namespace studio -l "app=studio-lb" -o jsonpath="{.items[0].metadata.name}") 9091:9091 &
-	@echo http://localhost:9091
-
-	# @$(KUBECTL) port-forward svc/grafana -n monitoring 8080:80 &
-	# @echo http://localhost:8080
-
-	# @$(KUBECTL) port-forward svc/metrics-sink-prometheus-pushgateway -n monitoring 9091:9091 &
-	# @echo http://localhost:9091
-
-	# @$(KUBECTL) port-forward svc/wio-mock -n monitoring 8081:8080 &
-	# @echo http://localhost:8081
-
-	# @$(KUBECTL) port-forward svc/gateway -n openfaas 8082:8080 &
-	# @echo http://localhost:8082
-
-kill-proxies:											## Kill proxies (kills all kubectl processes)
-	pkill kubectl || true
-
-help:													## Display this help
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m 	%s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
-
-clean: kill-proxies										## Destroy cluster
-	civo k8s delete $(CLUSTER_NAME)
