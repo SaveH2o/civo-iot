@@ -90,13 +90,13 @@ prometheus-operator:									## Deploy Prometheus Operator
 	sleep 5
 	$(KUBECTL) -n default wait --for condition=established crds --all --timeout=60s
 
-prometheus:												## Deploy Prometheus
-	$(info Deploying Prometheus)
+prometheus:												## Deploy Prometheus Customization
+	$(info Deploying Prometheus Customization)
 	@$(KUBECTL) create namespace monitoring --dry-run=client -o yaml | $(KUBECTL) apply -f -
 	$(KUBECTL) kustomize deploy/prometheus | $(KUBECTL) apply -n monitoring -f -
 
-pushgateway:											## Deploy Push Gateway
-	$(info Deploying Push Gateway)
+pushgateway:											## Deploy Prometheus Push Gateway
+	$(info Deploying Prometheus Push Gateway)
 	$(HELM) repo update
 	$(HELM) upgrade --install \
 		--namespace monitoring \
