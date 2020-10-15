@@ -9,8 +9,10 @@ HELM := helm $(KUBECONFIG)
 
 # Kubernetes dashboard v2.0.0-rc5 released 3 set 2020
 DASHBOARD = "https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.4/aio/deploy/recommended.yaml"
-# Namespace for Prometheus monitoring
-MONITORING = monitoring
+
+# Namespaces
+MONITORING = monitoring			# Prometheus monitoring
+STUDIO = studio					# Datastax Studio
 
 ifeq ($(INGRESS),)
 INGRESS = $(CLUSTER_ID).k8s.civo.com
@@ -63,7 +65,7 @@ dashboard-config:
 ##########################################################
 .PHONY: deploy-db cassandra-operator config-map studio
 
-deploy-db: cassandra-operator config-map studio			## Deploy Cassandra, ConfigMap and Studio
+deploy-db: cassandra-operator configmap studio			## Deploy Cassandra, ConfigMap and Studio
 
 cassandra-operator:										## Deploy Cassandra Operator
 	@$(info Deploying Cassandra Operator)
@@ -73,16 +75,15 @@ cassandra-operator:										## Deploy Cassandra Operator
 	@sleep 5
 	@$(KUBECTL) -n cass-operator apply -f deploy/cassandra/04-cassandra-cluster-1nodes.yaml
 
-config-map:												## Deploy ConfigMap
+configmap:												## Deploy ConfigMap
 	@cat deploy/cassandra/05-configMap.yaml | \
-		sed "s/superuserpassword/$(shell \
-		$(KUBECTL) get secret cluster1-superuser -n cass-operator -o yaml | grep -m1 -Po 'password: \K.*' | base64 -d && echo "")/" - \
+		sed "s/superuserpassword/$(shell $(KUBECTL) get secret cluster1-superuser -n cass-operator -o yaml | grep -m1 -Po 'password: \K.*' | base64 -d && echo "")/" - \
 		> deploy/cassandra/configMap.yaml
 
 studio:													## Deploy Studio
-	@$(KUBECTL) create namespace studio --dry-run=client -o yaml | $(KUBECTL) apply -f -
-	@$(KUBECTL) -n studio apply -f deploy/cassandra/configMap.yaml
-	@$(KUBECTL) -n studio apply -f deploy/cassandra/studio.yaml
+	@$(KUBECTL) create namespace $(STUDIO) --dry-run=client -o yaml | $(KUBECTL) apply -f -
+	@$(KUBECTL) -n $(STUDIO) apply -f deploy/cassandra/configMap.yaml
+	@$(KUBECTL) -n $(STUDIO) apply -f deploy/cassandra/studio.yaml
 
 ##########################################################
 ##@ CORE APPS
@@ -128,11 +129,13 @@ proxies:												## Proxy all services
 	@echo http://localhost:9090 prometheus
 	@echo http://localhost:9093 alertmanager
 	@echo http://localhost:8080 grafana
+	@echo http://localhost:9091 studio
 
 	@$(KUBECTL) proxy &
 	@$(KUBECTL) port-forward -n $(MONITORING) $(shell $(KUBECTL) get pods -n $(MONITORING) -l "app=prometheus" -o name)  9090:9090 &
 	@$(KUBECTL) port-forward -n $(MONITORING) $(shell $(KUBECTL) get pods -n $(MONITORING) -l "app=alertmanager" -o name)  9093:9093 &
 	@$(KUBECTL) port-forward -n $(MONITORING) svc/prometheus-grafana 8080:80 &
+	@$(KUBECTL) port-forward -n $(STUDIO) $(shell $(KUBECTL) get pods -n $(STUDIO) -l "app=studio-lb" -o name)  9091:9091 &
 
 kill-proxies:											## Kill proxies (kills all kubectl processes)
 	@pkill kubectl || true
