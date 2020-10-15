@@ -134,17 +134,6 @@ proxies:												## Proxy all services
 	@$(KUBECTL) port-forward -n $(MONITORING) $(shell $(KUBECTL) get pods -n $(MONITORING) -l "app=alertmanager" -o name)  9093:9093 &
 	@$(KUBECTL) port-forward -n $(MONITORING) svc/prometheus-grafana 8080:80 &
 
-	# @$(KUBECTL) port-forward -n studio \
-	# 	$(shell $(KUBECTL) get pods --namespace studio -l "app=studio-lb" -o jsonpath="{.items[0].metadata.name}") 9091:9091 &
-	# @echo http://localhost:9091
-
-	# @$(KUBECTL) port-forward -n $(MONITORING) \
-	# 	$(shell $(KUBECTL) get pods --namespace $(MONITORING) -l "app=prometheus-pushgateway,release=metrics-sink" -o jsonpath="{.items[0].metadata.name}") 8080:80 &
-	# @echo http://localhost:8080
-
-	# @$(KUBECTL) port-forward svc/metrics-sink-prometheus-pushgateway -n $(MONITORING) 9091:9091 &
-	# @echo http://localhost:9091
-
 kill-proxies:											## Kill proxies (kills all kubectl processes)
 	@pkill kubectl || true
 
