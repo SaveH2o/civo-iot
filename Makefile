@@ -7,6 +7,11 @@ KUBECONFIG := --kubeconfig $$HOME/.kube/config
 KUBECTL := kubectl $(KUBECONFIG)
 HELM := helm $(KUBECONFIG)
 
+# Kubernetes dashboard v2.0.0-rc5 released 3 set 2020
+DASHBOARD = "https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.4/aio/deploy/recommended.yaml"
+# Namespace for Prometheus monitoring
+MONITORING = monitoring
+
 ifeq ($(INGRESS),)
 INGRESS = $(CLUSTER_ID).k8s.civo.com
 endif
@@ -37,7 +42,7 @@ ingress:
 ##########################################################
 ##@ CLUSTER
 ##########################################################
-.PHONY: provision kube-config
+.PHONY: provision kube-config dashboard-config
 
 provision:												## Provision CIVO Cluster
 	$(info Provisioning cluster..)
@@ -50,14 +55,17 @@ provision:												## Provision CIVO Cluster
 kube-config:											## Download and show KUBECONFIG
 	@civo kubernetes config $(CLUSTER_NAME)
 
+dashboard-config:
+	@$(KUBECTL) -n kubernetes-dashboard describe secret admin-user-token | grep ^token
+
 ##########################################################
 ##@ DATABASE
 ##########################################################
 .PHONY: deploy-db cassandra-operator config-map studio
 
-deploy-db: cassandra-operator config-map studio		## Deploy Cassandra, ConfigMap and Studio
+deploy-db: cassandra-operator config-map studio			## Deploy Cassandra, ConfigMap and Studio
 
-cassandra-operator:									## Deploy Cassandra Operator
+cassandra-operator:										## Deploy Cassandra Operator
 	@$(info Deploying Cassandra Operator)
 	@$(KUBECTL) create namespace cass-operator --dry-run=client -o yaml | $(KUBECTL) apply -f -
 	@$(KUBECTL) -n cass-operator apply -f deploy/cassandra/02-storageclass-kind.yaml
@@ -65,13 +73,13 @@ cassandra-operator:									## Deploy Cassandra Operator
 	@sleep 5
 	@$(KUBECTL) -n cass-operator apply -f deploy/cassandra/04-cassandra-cluster-1nodes.yaml
 
-config-map:											## Deploy ConfigMap
+config-map:												## Deploy ConfigMap
 	@cat deploy/cassandra/05-configMap.yaml | \
 		sed "s/superuserpassword/$(shell \
 		$(KUBECTL) get secret cluster1-superuser -n cass-operator -o yaml | grep -m1 -Po 'password: \K.*' | base64 -d && echo "")/" - \
 		> deploy/cassandra/configMap.yaml
 
-studio:												## Deploy Studio
+studio:													## Deploy Studio
 	@$(KUBECTL) create namespace studio --dry-run=client -o yaml | $(KUBECTL) apply -f -
 	@$(KUBECTL) -n studio apply -f deploy/cassandra/configMap.yaml
 	@$(KUBECTL) -n studio apply -f deploy/cassandra/studio.yaml
@@ -79,100 +87,81 @@ studio:												## Deploy Studio
 ##########################################################
 ##@ CORE APPS
 ##########################################################
-.PHONY: deploy-core prometheus-operator prometheus pushgateway grafana
+.PHONY: core dashboard prometheus pushgateway
 
-deploy-core: 											## Deploy all core applications
-deploy-core: prometheus-operator prometheus pushgateway grafana
+core: 													## Deploy core applications
+core: dashboard prometheus pushgateway
 
-prometheus-operator:									## Deploy Prometheus Operator
+dashboard:
+	@$(info Deploying Dashboard)
+	@$(KUBECTL) create -f $(DASHBOARD)
+	@$(KUBECTL) create -f deploy/dashboard/dashboard.admin-user.yaml -f deploy/dashboard/dashboard.admin-user-role.yaml
+
+prometheus:												## Deploy Prometheus Operator
 	@$(info Deploying Prometheus Operator)
-	$(KUBECTL) -n default apply -f https://raw.githubusercontent.com/coreos/prometheus-operator/v0.42.1/bundle.yaml --wait --all
-	sleep 5
-	$(KUBECTL) -n default wait --for condition=established crds --all --timeout=60s
-
-prometheus:												## Deploy Prometheus Customization
-	$(info Deploying Prometheus Customization)
-	@$(KUBECTL) create namespace monitoring --dry-run=client -o yaml | $(KUBECTL) apply -f -
-	$(KUBECTL) kustomize deploy/prometheus | $(KUBECTL) apply -n monitoring -f -
+	@$(KUBECTL) create namespace $(MONITORING) --dry-run=client -o yaml | $(KUBECTL) apply -f -
+	@$(HELM) repo add prometheus-community https://prometheus-community.github.io/helm-charts
+	@$(HELM) repo add stable https://kubernetes-charts.storage.googleapis.com/
+	@$(HELM) repo update
+	@$(HELM) install prometheus prometheus-community/kube-prometheus-stack \
+		--namespace $(MONITORING) \
+		--values deploy/prom/prometheus-operator-values.yaml \
+		--wait
 
 pushgateway:											## Deploy Prometheus Push Gateway
 	$(info Deploying Prometheus Push Gateway)
 	$(HELM) repo update
 	$(HELM) upgrade --install \
-		--namespace monitoring \
+		--create-namespace $(MONITORING) \
 		--values deploy/pushgateway/values.yaml \
 		--version 1.3.0 \
 		--wait \
 		metrics-sink stable/prometheus-pushgateway
 	
-grafana:												## Deploy Grafana
-	$(info Deploying Grafana)
-	@docker run -it \
-		--env-file .env \
-		--volume $(CURDIR):/home \
-		--workdir /home \
-		jwilder/dockerize -template deploy/grafana/values.yaml > /tmp/grafana.yaml
-	@$(HELM) upgrade --install \
-		--namespace monitoring \
-		--set adminPassword=$(ADMIN_PASSWORD) \
-		--set ingress.hosts[0]="grafana.$(INGRESS)" \
-		--set ingress.path="/" \
-		--values /tmp/grafana.yaml \
-		--version 4.0.4 \
-		--wait \
-		grafana stable/grafana
-	@$(KUBECTL) apply -f deploy/grafana/fleet-dashboard.yaml -n monitoring
-
 ##########################################################
 ##@ UTIL
 ##########################################################
 .PHONY: proxies kill-proxies kill-prometheus help clean
 
 proxies:												## Proxy all services
+	@echo http://localhost:8001 dashboard
+	@echo http://localhost:9090 prometheus
+	@echo http://localhost:9093 alertmanager
+	@echo http://localhost:8080 grafana
+
 	@$(KUBECTL) proxy &
-	@echo http://localhost:8001
-	
-	@$(KUBECTL) port-forward -n monitoring prometheus-prometheus-0 9090:9090 &
-	@echo http://localhost:9090
+	@$(KUBECTL) port-forward -n $(MONITORING) $(shell $(KUBECTL) get pods -n $(MONITORING) -l "app=prometheus" -o name)  9090:9090 &
+	@$(KUBECTL) port-forward -n $(MONITORING) $(shell $(KUBECTL) get pods -n $(MONITORING) -l "app=alertmanager" -o name)  9093:9093 &
+	@$(KUBECTL) port-forward -n $(MONITORING) svc/prometheus-grafana 8080:80 &
 
-	@$(KUBECTL) port-forward -n studio \
-		$(shell $(KUBECTL) get pods --namespace studio -l "app=studio-lb" -o jsonpath="{.items[0].metadata.name}") 9091:9091 &
-	@echo http://localhost:9091
-
-	@$(KUBECTL) port-forward -n monitoring \
-		$(shell $(KUBECTL) get pods --namespace monitoring -l "app=prometheus-pushgateway,release=metrics-sink" -o jsonpath="{.items[0].metadata.name}") 8080:80 &
-	@echo http://localhost:8080
-
-	# @$(KUBECTL) port-forward svc/grafana -n monitoring 8080:80 &
-	# @echo http://localhost:8080
-
-	# @$(KUBECTL) port-forward svc/metrics-sink-prometheus-pushgateway -n monitoring 9091:9091 &
+	# @$(KUBECTL) port-forward -n studio \
+	# 	$(shell $(KUBECTL) get pods --namespace studio -l "app=studio-lb" -o jsonpath="{.items[0].metadata.name}") 9091:9091 &
 	# @echo http://localhost:9091
 
-	# @$(KUBECTL) port-forward svc/wio-mock -n monitoring 8081:8080 &
-	# @echo http://localhost:8081
+	# @$(KUBECTL) port-forward -n $(MONITORING) \
+	# 	$(shell $(KUBECTL) get pods --namespace $(MONITORING) -l "app=prometheus-pushgateway,release=metrics-sink" -o jsonpath="{.items[0].metadata.name}") 8080:80 &
+	# @echo http://localhost:8080
 
-	# @$(KUBECTL) port-forward svc/gateway -n openfaas 8082:8080 &
-	# @echo http://localhost:8082
+	# @$(KUBECTL) port-forward svc/metrics-sink-prometheus-pushgateway -n $(MONITORING) 9091:9091 &
+	# @echo http://localhost:9091
 
 kill-proxies:											## Kill proxies (kills all kubectl processes)
-	pkill kubectl || true
+	@pkill kubectl || true
 
 kill-prometheus:										## Kill prometheus monitoring
-	for ns in $(shell $(KUBECTL) get namespaces -o jsonpath={..metadata.name}); do \
-		$(KUBECTL) delete --all --namespace=$(ns) prometheus,servicemonitoring,podmonitoring,alertmanager ; \
-	done &
-	$(KUBECTL) delete -n monitoring -f https://raw.githubusercontent.com/coreos/prometheus-operator/v0.42.1/bundle.yaml &
-	for ns in $(shell $(KUBECTL) get namespaces -o jsonpath={..metadata.name}); do \
-		$(KUBECTL) delete --ignore-not-found --namespace=$(ns) service prometheus-operated alertmanager-operated ; \
-	done &
-	$(KUBECTL) delete --ignore-not-found customresourcedefinitions \
-		prometheuses.monitoringing.coreos.com \
-		servicemonitorings.monitoringing.coreos.com \
-		podmonitorings.monitoringing.coreos.com \
-		alertmanagers.monitoringing.coreos.com \
-		prometheusrules.monitoringing.coreos.com &
-	$(KUBECTL) delete ns monitoring
+	@$(HELM) uninstall -n $(MONITORING) prometheus
+	@$(KUBECTL) delete --ignore-not-found crd prometheuses.monitoring.coreos.com
+	@$(KUBECTL) delete --ignore-not-found crd prometheusrules.monitoring.coreos.com
+	@$(KUBECTL) delete --ignore-not-found crd servicemonitors.monitoring.coreos.com
+	@$(KUBECTL) delete --ignore-not-found crd podmonitors.monitoring.coreos.com
+	@$(KUBECTL) delete --ignore-not-found crd alertmanagers.monitoring.coreos.com
+	@$(KUBECTL) delete --ignore-not-found crd thanosrulers.monitoring.coreos.com
+	@$(KUBECTL) delete --ignore-not-found crd probes.monitoring.coreos.com
+	@$(KUBECTL) delete ns $(MONITORING)
+
+kill-dashboard:
+	@$(KUBECTL) delete -f $(DASHBOARD)
+	@$(KUBECTL) delete -f deploy/dashboard/dashboard.admin-user.yaml -f deploy/dashboard/dashboard.admin-user-role.yaml
 
 help:													## Display this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m 	%s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
@@ -216,7 +205,7 @@ mock-server:											## Deploy Mock Server
 		https://github.com/gabeduke/wio-mock/deploy?ref=master | $(KUBECTL) apply -n default -f -
 
 ##########################################################
-##@ Faas
+##@ Faas Util
 ##########################################################
 .PHONY: faas-build faas-push faas-deploy faas-up faas-down faas-create-secrets faas-login
 
@@ -242,5 +231,5 @@ faas-create-secrets: faas-login								## Create FaaS secrets
 	faas --gateway $(FAAS_GATEWAY) secret create --from-literal=$(WIO2) wio2
 	faas --gateway $(FAAS_GATEWAY) secret create --from-literal=$(WIO3) wio3
 
-faas-login:												## Log in to OpenFaaS
+faas-login:													## Log in to OpenFaaS
 	faas login --gateway $(FAAS_GATEWAY) -u admin -p $(ADMIN_PASSWORD)
