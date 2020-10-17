@@ -24,7 +24,7 @@ FAAS_FN = fn-mock.yml
 FAAS_GATEWAY = http://$(INGRESS):31112
 
 .DEFAULT_GOAL := help
-.PHONY: all all-byoc all-mock ingress
+.PHONY: all
 
 all: 													## Deploy stack in a empty cluster
 all: core db
@@ -44,7 +44,7 @@ all: core db
 ##########################################################
 ##@ CLUSTER
 ##########################################################
-.PHONY: provision kube-config dashboard-config
+.PHONY: provision kube-config dashboard-config ingress
 
 provision:												## Provision CIVO Cluster
 	$(info Provisioning cluster..)
