@@ -26,20 +26,20 @@ FAAS_GATEWAY = http://$(INGRESS):31112
 .DEFAULT_GOAL := help
 .PHONY: all all-byoc all-mock ingress
 
-all: 													## Deploy stack end to end
-all: FAAS_FN=fn-prod.yml
-all: provision deploy-core faas-create-secrets faas-up
+all: 													## Deploy stack in a empty cluster
+all: core db
 
-all-byoc: 												## Deploy stack end to end (bring your own cluster)
-all-byoc: FAAS_FN=fn-prod.yml
-all-byoc: deploy-core faas-create-secrets faas-up
+# all: 													## Deploy stack end to end
+# all: FAAS_FN=fn-prod.yml
+# all: provision deploy-core faas-create-secrets faas-up
 
-all-mock:												## Deploy stack end to end
-all-mock: FAAS_FN=fn-mock.yml
-all-mock: provision deploy-core faas-up
+# all-byoc: 												## Deploy stack end to end (bring your own cluster)
+# all-byoc: FAAS_FN=fn-prod.yml
+# all-byoc: deploy-core faas-create-secrets faas-up
 
-ingress:
-	@echo "Ingress: $(INGRESS)"
+# all-mock:												## Deploy stack end to end
+# all-mock: FAAS_FN=fn-mock.yml
+# all-mock: provision deploy-core faas-up
 
 ##########################################################
 ##@ CLUSTER
@@ -60,14 +60,17 @@ kube-config:											## Download and show KUBECONFIG
 dashboard-config:
 	@$(KUBECTL) -n kubernetes-dashboard describe secret admin-user-token | grep ^token
 
+ingress:												## Show ingress
+	@echo "Ingress: $(INGRESS)"
+
 ##########################################################
 ##@ DATABASE
 ##########################################################
-.PHONY: deploy-db cassandra-operator config-map studio
+.PHONY: db cassandra config-map studio
 
-deploy-db: cassandra-operator configmap studio			## Deploy Cassandra, ConfigMap and Studio
+db: cassandra-operator configmap studio					## Deploy Cassandra, ConfigMap and Studio
 
-cassandra-operator:										## Deploy Cassandra Operator
+cassandra:												## Deploy Cassandra Operator
 	@$(info Deploying Cassandra Operator)
 	@$(KUBECTL) create namespace cass-operator --dry-run=client -o yaml | $(KUBECTL) apply -f -
 	@$(KUBECTL) -n cass-operator apply -f deploy/cassandra/02-storageclass-kind.yaml
