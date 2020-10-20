@@ -46,8 +46,8 @@ all: core db
 ##########################################################
 .PHONY: provision kube-config dashboard-config ingress
 
-provision:												## Provision CIVO Cluster
-	$(info Provisioning cluster..)
+provision:												## Provision Civo Kubernetes Cluster
+	$(info Provisioning Civo Kubernetes Cluster..)
 	@civo kubernetes create \
 		--nodes 3 \
 		--size "g2.medium" \
@@ -109,7 +109,6 @@ prometheus:												## Deploy Prometheus Operator
 	@$(HELM) repo update
 	@$(HELM) install prometheus prometheus-community/kube-prometheus-stack \
 		--namespace $(MONITORING) \
-		--values deploy/prom/prometheus-operator-values.yaml \
 		--wait
 
 pushgateway:											## Deploy Prometheus Push Gateway
