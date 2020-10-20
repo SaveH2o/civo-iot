@@ -38,18 +38,15 @@ Deploy core applications into the cluster, including the latest prometheus-commu
 Deploy/kill proxies for all applications.
 
     make proxies
+    make kill-proxies
 
-Currently following proxies are started:
+Currently following proxies are available:
 
 - http://localhost:8001 dashboard
 - http://localhost:9090 prometheus
 - http://localhost:9093 alertmanager
 - http://localhost:8080 grafana
 - http://localhost:9091 studio
-
-    make kill-proxies
-
-Kill all proxies.
 
 ## Provision Cluster
 
