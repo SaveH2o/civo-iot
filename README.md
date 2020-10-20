@@ -62,4 +62,11 @@ Provision a Civo K3s cluster.
 
     make provision
 
-If issues with *civo create* stalls the remote provision, try creating an empty cluster first using civo.com. 
+If issues with *civo create* stalls the remote provision, try creating an empty cluster first using civo.com and fill properly the .env file.
+
+    CIVO_TOKEN=wGd9xxx-xxxxxxxxxx-xxxxxxx8PqxE2shygAjCJ
+    SLACK_URL=https://hooks.slack.com/services/xxx/xxx/xxx
+    ADMIN_PASSWORD=xxx
+    WIO1=xxx
+    WIO2=xxx
+    WIO3=xxx
