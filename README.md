@@ -15,7 +15,7 @@ Currently **core** and **db** only. There is no automatic **provision**, it's ex
 
     make all
 
-## Deploy Core Applications
+## Core Applications
 
 Deploy core applications into the cluster, including the latest prometheus-community/kube-prometheus-stack. 
 
@@ -26,7 +26,7 @@ Deploy core applications into the cluster, including the latest prometheus-commu
 * **PushGateway**: is a 'sink' or 'buffer' for metric data that is too short lived for Prometheus to scrape. This is what our cron jobs will log data to since the containers wont live long enough for Prometheus to ever see them.
 * **Kubernetes Dashboard**: The oficial dashboard for Kubernetes, updated to v2.04.
 
-## Deploy Database
+## Database
 
     make db
 
