@@ -42,6 +42,8 @@ Also available individual commands:
 
 ## Database
 
+Deploy Cassandra and DataStax Studio, based on a ConfigMap.
+
     make db
 
 * **Cassandra-Operator**: Cassandra Database, based on [DataStax Cassandra Workshop Series](https://github.com/bampli/t1-astra/blob/master/DataStax_README.md).

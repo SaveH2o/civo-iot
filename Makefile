@@ -54,9 +54,9 @@ ingress:												## Show ingress
 ##########################################################
 ##@ DATABASE
 ##########################################################
-.PHONY: db cassandra config-map studio
+.PHONY: db cassandra configmap studio
 
-db: cassandra-operator configmap studio					## Deploy Cassandra, ConfigMap and Studio
+db: cassandra configmap studio							## Deploy Cassandra, ConfigMap and Studio
 
 cassandra:												## Deploy Cassandra Operator
 	@$(info Deploying Cassandra Operator)
@@ -112,7 +112,7 @@ pushgateway:											## Deploy Prometheus Push Gateway
 ##########################################################
 ##@ UTIL
 ##########################################################
-.PHONY: proxies kill-proxies kill-prometheus help clean cron-connector
+.PHONY: proxies kill-proxies kill-prometheus kill-dashboard help clean cron-connector
 
 proxies:												## Proxy all services
 	@echo http://localhost:8001 dashboard
