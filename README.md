@@ -33,6 +33,24 @@ Deploy core applications into the cluster, including the latest prometheus-commu
 * **Cassandra-Operator**: Cassandra Database, based on [DataStax Cassandra Workshop Series](https://github.com/bampli/t1-astra/blob/master/DataStax_README.md).
 * **Datastax Studio**: The development tool inside the cluster to check cassandra db.
 
+## Proxies
+
+Deploy/kill proxies for all applications.
+
+    make proxies
+
+Currently following proxies are started:
+
+- http://localhost:8001 dashboard
+- http://localhost:9090 prometheus
+- http://localhost:9093 alertmanager
+- http://localhost:8080 grafana
+- http://localhost:9091 studio
+
+    make kill-proxies
+
+Kill all proxies.
+
 ## Provision Cluster
 
 Provision a Civo K3s cluster.
