@@ -29,18 +29,6 @@ FAAS_GATEWAY = http://$(INGRESS):31112
 all: 													## Deploy stack in a empty cluster
 all: core db
 
-# all: 													## Deploy stack end to end
-# all: FAAS_FN=fn-prod.yml
-# all: provision deploy-core faas-create-secrets faas-up
-
-# all-byoc: 												## Deploy stack end to end (bring your own cluster)
-# all-byoc: FAAS_FN=fn-prod.yml
-# all-byoc: deploy-core faas-create-secrets faas-up
-
-# all-mock:												## Deploy stack end to end
-# all-mock: FAAS_FN=fn-mock.yml
-# all-mock: provision deploy-core faas-up
-
 ##########################################################
 ##@ CLUSTER
 ##########################################################
@@ -124,7 +112,7 @@ pushgateway:											## Deploy Prometheus Push Gateway
 ##########################################################
 ##@ UTIL
 ##########################################################
-.PHONY: proxies kill-proxies kill-prometheus help clean
+.PHONY: proxies kill-proxies kill-prometheus help clean cron-connector
 
 proxies:												## Proxy all services
 	@echo http://localhost:8001 dashboard
@@ -162,3 +150,7 @@ help:													## Display this help
 
 clean: kill-proxies										## Destroy cluster
 	civo k8s delete $(CLUSTER_NAME)
+
+cron-connector:											## Deploy Cron Connector
+	$(info Deploying Cron Connector)
+	$(KUBECTL) apply -f deploy/cron-connector
