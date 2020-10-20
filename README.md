@@ -9,6 +9,12 @@ IOT Prometheus sink on top of Civo k3s.
 * [Helm3](https://helm.sh/docs/intro/install/ "Helm Installation"): to avoid Tiller
 * [Kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/ "Kubectl Installation")
 
+## Get started
+
+Clone the repo and type make to get help.
+
+    make
+
 ## All
 
 Currently **core** and **db** only. There is no automatic **provision**, it's expected you bring your own cluster.
