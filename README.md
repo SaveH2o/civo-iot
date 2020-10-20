@@ -15,7 +15,7 @@ Clone the repo and type make to get help.
 
     make
 
-## All
+## Deploy All
 
 Currently **core** and **db** only. There is no automatic **provision**, it's expected you bring your own cluster.
 
