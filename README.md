@@ -17,7 +17,7 @@ Currently **core** and **db** only. There is no automatic **provision**, it's ex
 
 ## Deploy Core Applications
 
-Deploy the core applications into the cluster, including the latest prometheus-community/kube-prometheus-stack. 
+Deploy core applications into the cluster, including the latest prometheus-community/kube-prometheus-stack. 
 
     make core
 
