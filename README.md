@@ -1,6 +1,6 @@
 # Civo IOT
 
-IOT Prometheus sink on top of Civo k3s.
+IOT Prometheus sink on top of Civo k3s, adapted to include Cassandra.
 
 ## Pre-requisites
 
