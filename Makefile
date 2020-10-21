@@ -13,6 +13,7 @@ DASHBOARD = "https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.4/aio/d
 # Namespaces
 MONITORING = monitoring			# Prometheus monitoring
 STUDIO = studio					# Datastax Studio
+TRAEFIK = traefik-v2
 
 ifeq ($(INGRESS),)
 INGRESS = $(CLUSTER_ID).k8s.civo.com
@@ -79,10 +80,10 @@ studio:													## Deploy Studio
 ##########################################################
 ##@ CORE APPS
 ##########################################################
-.PHONY: core dashboard prometheus pushgateway
+.PHONY: core dashboard prometheus pushgateway traefik
 
 core: 													## Deploy core applications
-core: dashboard prometheus pushgateway
+core: dashboard prometheus pushgateway traefik
 
 dashboard:
 	@$(info Deploying Dashboard)
@@ -92,8 +93,8 @@ dashboard:
 prometheus:												## Deploy Prometheus Operator
 	@$(info Deploying Prometheus Operator)
 	@$(KUBECTL) create namespace $(MONITORING) --dry-run=client -o yaml | $(KUBECTL) apply -f -
-	@$(HELM) repo add prometheus-community https://prometheus-community.github.io/helm-charts
 	@$(HELM) repo add stable https://kubernetes-charts.storage.googleapis.com/
+	@$(HELM) repo add prometheus-community https://prometheus-community.github.io/helm-charts
 	@$(HELM) repo update
 	@$(HELM) install prometheus prometheus-community/kube-prometheus-stack \
 		--namespace $(MONITORING) \
@@ -108,7 +109,17 @@ pushgateway:											## Deploy Prometheus Push Gateway
 		--version 1.3.0 \
 		--wait \
 		metrics-sink stable/prometheus-pushgateway
-	
+
+traefik:												## Deploy Traefik
+	@$(info Deploying Traefik v2)
+	@$(KUBECTL) create namespace $(TRAEFIK) --dry-run=client -o yaml | $(KUBECTL) apply -f -
+	@$(HELM) repo add traefik https://helm.traefik.io/traefik
+	@$(HELM) repo update
+	@$(HELM) install traefik traefik/traefik \
+		--namespace $(TRAEFIK) \
+		--wait
+	@$(KUBECTL) apply -n namespace $(TRAEFIK) -f deploy/traefik/dashboard.yaml
+
 ##########################################################
 ##@ UTIL
 ##########################################################
@@ -120,12 +131,14 @@ proxies:												## Proxy all services
 	@echo http://localhost:9093 alertmanager
 	@echo http://localhost:8080 grafana
 	@echo http://localhost:9091 studio
+	@echo http://localhost:9000 traefik
 
 	@$(KUBECTL) proxy &
 	@$(KUBECTL) port-forward -n $(MONITORING) $(shell $(KUBECTL) get pods -n $(MONITORING) -l "app=prometheus" -o name)  9090:9090 &
 	@$(KUBECTL) port-forward -n $(MONITORING) $(shell $(KUBECTL) get pods -n $(MONITORING) -l "app=alertmanager" -o name)  9093:9093 &
 	@$(KUBECTL) port-forward -n $(MONITORING) svc/prometheus-grafana 8080:80 &
 	@$(KUBECTL) port-forward -n $(STUDIO) $(shell $(KUBECTL) get pods -n $(STUDIO) -l "app=studio-lb" -o name)  9091:9091 &
+	#@$(KUBECTL) port-forward -n $(TRAEFIK) $(shell $(KUBECTL) get pods -n $(TRAEFIK) -l "app=traefik" -o name)  9091:9091 &
 
 kill-proxies:											## Kill proxies (kills all kubectl processes)
 	@pkill kubectl || true
@@ -149,7 +162,7 @@ help:													## Display this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m 	%s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
 clean: kill-proxies										## Destroy cluster
-	civo k8s delete $(CLUSTER_NAME)
+	civo kubernetes delete $(CLUSTER_NAME)
 
 cron-connector:											## Deploy Cron Connector
 	$(info Deploying Cron Connector)
