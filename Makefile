@@ -1,7 +1,7 @@
 include .env
 
 CLUSTER_NAME = saveh2o
-CLUSTER_ID = $(shell curl -H "Authorization: Bearer ${CIVO_TOKEN}" https://api.civo.com/v2/kubernetes/clusters | jq '.items[] | select(.name == "saveh2o") | .id')
+CIVO_CLUSTER_ID = $(shell curl -H "Authorization: Bearer ${CIVO_TOKEN}" https://api.civo.com/v2/kubernetes/clusters | jq '.items[] | select(.name == "saveh2o") | .id')
 
 KUBECONFIG := --kubeconfig $$HOME/.kube/config
 KUBECTL := kubectl $(KUBECONFIG)
@@ -13,16 +13,16 @@ DASHBOARD = "https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.4/aio/d
 # Namespaces
 MONITORING = monitoring			# Prometheus monitoring
 STUDIO = studio					# Datastax Studio
-TRAEFIK = traefik-v2
+TRAEFIK = traefik				# Traefik
 
-ifeq ($(INGRESS),)
-INGRESS = $(CLUSTER_ID).k8s.civo.com
+ifeq ($(CIVO_INGRESS),)
+CIVO_INGRESS = $(CIVO_CLUSTER_ID).k8s.civo.com
 endif
 
 FAAS_BUILD_ARGS = --tag=branch
 FAAS_FN = fn-mock.yml
 # FAAS_FN = fn-prod.yml
-FAAS_GATEWAY = http://$(INGRESS):31112
+FAAS_GATEWAY = http://$(CIVO_INGRESS):31112
 
 .DEFAULT_GOAL := help
 .PHONY: all
@@ -31,11 +31,11 @@ all: 													## Deploy stack in a empty cluster
 all: core db
 
 ##########################################################
-##@ CLUSTER
+##@ Civo Kubernetes
 ##########################################################
-.PHONY: provision kube-config dashboard-config ingress
+.PHONY: civo-provision civo-config civo-ingress
 
-provision:												## Provision Civo Kubernetes Cluster
+civo-provision:												## Provision Civo Kubernetes Cluster
 	$(info Provisioning Civo Kubernetes Cluster..)
 	@civo kubernetes create \
 		--nodes 3 \
@@ -43,14 +43,11 @@ provision:												## Provision Civo Kubernetes Cluster
 		--wait \
 		$(CLUSTER_NAME) 
 
-kube-config:											## Download and show KUBECONFIG
+civo-config:											## Download and show KUBECONFIG
 	@civo kubernetes config $(CLUSTER_NAME)
 
-dashboard-config:
-	@$(KUBECTL) -n kubernetes-dashboard describe secret admin-user-token | grep ^token
-
-ingress:												## Show ingress
-	@echo "Ingress: $(INGRESS)"
+civo-ingress:												## Show ingress
+	@echo "Ingress: $(CIVO_INGRESS)"
 
 ##########################################################
 ##@ DATABASE
@@ -103,7 +100,7 @@ prometheus:												## Deploy Prometheus Operator
 pushgateway:											## Deploy Prometheus Push Gateway
 	$(info Deploying Prometheus Push Gateway)
 	$(HELM) repo update
-	$(HELM) upgrade --install \
+	$(HELM) install \
 		--create-namespace $(MONITORING) \
 		--values deploy/pushgateway/values.yaml \
 		--version 1.3.0 \
@@ -123,7 +120,7 @@ traefik:												## Deploy Traefik
 ##########################################################
 ##@ UTIL
 ##########################################################
-.PHONY: proxies kill-proxies kill-prometheus kill-dashboard help clean cron-connector
+.PHONY: proxies kill-proxies kill-prometheus dashboard-config kill-dashboard help clean cron-connector
 
 proxies:												## Proxy all services
 	@echo http://localhost:8001 dashboard
@@ -138,7 +135,7 @@ proxies:												## Proxy all services
 	@$(KUBECTL) port-forward -n $(MONITORING) $(shell $(KUBECTL) get pods -n $(MONITORING) -l "app=alertmanager" -o name)  9093:9093 &
 	@$(KUBECTL) port-forward -n $(MONITORING) svc/prometheus-grafana 8080:80 &
 	@$(KUBECTL) port-forward -n $(STUDIO) $(shell $(KUBECTL) get pods -n $(STUDIO) -l "app=studio-lb" -o name)  9091:9091 &
-	#@$(KUBECTL) port-forward -n $(TRAEFIK) $(shell $(KUBECTL) get pods -n $(TRAEFIK) -l "app=traefik" -o name)  9091:9091 &
+	@$(KUBECTL) port-forward -n $(TRAEFIK) $(shell $(KUBECTL) get pods -n $(TRAEFIK) -l "app.kubernetes.io/name=traefik" -o name) 9091:9091 &
 
 kill-proxies:											## Kill proxies (kills all kubectl processes)
 	@pkill kubectl || true
@@ -153,6 +150,9 @@ kill-prometheus:										## Kill prometheus monitoring
 	@$(KUBECTL) delete --ignore-not-found crd thanosrulers.monitoring.coreos.com
 	@$(KUBECTL) delete --ignore-not-found crd probes.monitoring.coreos.com
 	@$(KUBECTL) delete ns $(MONITORING)
+
+dashboard-config:
+	@$(KUBECTL) -n kubernetes-dashboard describe secret admin-user-token | grep ^token
 
 kill-dashboard:
 	@$(KUBECTL) delete -f $(DASHBOARD)
